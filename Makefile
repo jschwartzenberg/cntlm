@@ -17,7 +17,7 @@ CC		:= gcc
 VER		:= $(shell cat VERSION)
 OS		:= $(shell uname -s)
 OSLDFLAGS	:= $(shell [ $(OS) = "SunOS" ] && echo "-lrt -lsocket -lnsl")
-LDFLAGS		:= -lpthread $(OSLDFLAGS)
+LDFLAGS		:= -lpthread $(OSLDFLAGS) -lpam
 CYGWIN_REQS	:= cygwin1.dll cyggcc_s-seh-1.dll cygstdc++-6.dll cygrunsrv.exe 
 GCC_GTEQ_430 := $(shell expr `${CC} -dumpversion | sed -e 's/\.\([0-9][0-9]\)/\1/g' -e 's/\.\([0-9]\)/0\1/g' -e 's/^[0-9]\{3,4\}$$/&00/'` \>= 40300)
 GCC_GTEQ_450 := $(shell expr `${CC} -dumpversion | sed -e 's/\.\([0-9][0-9]\)/\1/g' -e 's/\.\([0-9]\)/0\1/g' -e 's/^[0-9]\{3,4\}$$/&00/'` \>= 40500)
@@ -26,6 +26,7 @@ GCC_GTEQ_700 := $(shell expr `${CC} -dumpversion | sed -e 's/\.\([0-9][0-9]\)/\1
 
 CFLAGS	+= -std=c99 -D__BSD_VISIBLE -D_ALL_SOURCE -D_XOPEN_SOURCE=600 -D_POSIX_C_SOURCE=200112 -D_ISOC99_SOURCE -D_REENTRANT -D_BSD_SOURCE -DVERSION=\"'$(VER)'\"
 CFLAGS	+= -Wall -Wextra -pedantic -Wshadow -Wcast-qual -Wbad-function-cast -Wstrict-prototypes
+CFLAGS	+= -fPIC
 #CFLAGS  += -ftrapv
 #CFLAGS  += -fsanitize=undefined -fsanitize-undefined-trap-on-error
 ifeq "$(GCC_GTEQ_430)" "1"
@@ -57,9 +58,11 @@ else
 endif
 
 ifneq ($(findstring CYGWIN,$(OS)),)
-	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o auth.o http.o forward.o direct.o scanner.o pages.o main.o sspi.o win/resources.o
+	OBJS_PAM_CNTLM=utils.o ntlm.o xcrypt.o config.o socket.o auth.o http.o forward.o direct.o scanner.o pages.o main.o win/resources.o
+	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o auth.o http.o forward.o direct.o scanner.o pages.o main.o pam_cntlm.o sspi.o win/resources.o
 else
-	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o auth.o http.o forward.o direct.o scanner.o pages.o main.o
+	OBJS_PAM_CNTLM=utils.o ntlm.o xcrypt.o config.o socket.o auth.o http.o forward.o direct.o scanner.o pages.o main.o
+	OBJS=utils.o ntlm.o xcrypt.o config.o socket.o auth.o http.o forward.o direct.o scanner.o pages.o main.o pam_cntlm.o
 endif
 
 ENABLE_KERBEROS=$(shell grep -c ENABLE_KERBEROS config/config.h)
@@ -80,6 +83,12 @@ all: $(NAME)
 $(NAME): configure-stamp $(OBJS)
 	@echo "Linking $@"
 	@$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+
+pam_cntlm.o: pam_cntlm.c
+	$(CC) -Wall -fPIC -c pam_cntlm.c -o pam_cntlm.o
+	ld -Bshareable pam_cntlm.o $(OBJS_PAM_CNTLM) $(LDFLAGS) -o pam_cntlm.so
+	$(CC) -lpthread -Wall list_users_pam_cntlm.c -o list_users_pam_cntlm
+
 
 main.o: main.c
 	@echo "Compiling $<"
@@ -113,6 +122,8 @@ install: $(NAME)
 			|| install -d -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
 	else \
 		install -D -m 755 -s $(NAME) $(BINDIR)/$(NAME); \
+		install -D -o root -g root -m 755 -s pam_cntlm.so $(LIBDIR)/security/pam_cntlm.so; \
+		install -D -o root -g root -m 755 -s list_users_pam_cntlm $(BINDIR)/list_users_pam_cntlm; \
 		install -D -m 644 doc/$(NAME).1 $(MANDIR)/man1/$(NAME).1; \
 		[ -f $(SYSCONFDIR)/$(NAME).conf -o -z "$(SYSCONFDIR)" ] \
 			|| install -D -m 600 doc/$(NAME).conf $(SYSCONFDIR)/$(NAME).conf; \
@@ -202,7 +213,7 @@ uninstall:
 
 clean:
 	@rm -f config/endian config/gethostname config/strdup config/socklen_t config/arc4random_buf config/*.exe
-	@rm -f *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h
+	@rm -f list_users_pam_cntlm *~ *.so *.o cntlm cntlm.exe configure-stamp build-stamp config/config.h
 	rm -f $(patsubst %, win/%, $(CYGWIN_REQS) cntlm.exe cntlm.ini LICENSE.txt resources.o setup.iss cntlm_manual.pdf)
 	@if [ -h Makefile ]; then rm -f Makefile; mv Makefile.gcc Makefile; fi
 

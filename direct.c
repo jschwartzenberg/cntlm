@@ -40,6 +40,10 @@
 #include "direct.h"
 #include "pages.h"
 
+// pam_cntlm patch
+//
+#include "pam_cntlm.h"
+
 int host_connect(const char *hostname, int port) {
 	int fd;
 	struct addrinfo *addresses;
@@ -220,6 +224,13 @@ rr_data_t direct_request(void *cdata, rr_data_const_t request) {
 	 * If web auth fails, we'll rewrite them like with NTLM-to-Basic in proxy mode.
 	 */
 	tcreds = dup_auth(g_creds, /* fullcopy */ 1);
+
+	// pam_cntlm patch
+	//
+	update_creds(tcreds, cd);
+	if (debug) {
+		printf("---> pam_cntlm: direct_request\n");
+	}
 
 	if (request->hostname) {
 		hostname = strdup(request->hostname);

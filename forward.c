@@ -44,6 +44,10 @@
 #include "kerberos.h"
 #endif
 
+// pam_cntlm patch
+//
+#include "pam_cntlm.h"
+
 int parent_curr = 0;
 pthread_mutex_t parent_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -505,6 +509,13 @@ beginning:
 		sd = i;
 		authok = 1;
 		was_cached = 1;
+
+		// pam_cntlm
+		//
+		update_creds(tcreds, cd);
+		if (debug) {
+			printf("---> pam_cntlm: forward_request cached connection\n");
+		}
 	} else {
 		tcreds = new_auth();
 #ifdef ENABLE_PACPARSER
@@ -525,6 +536,14 @@ beginning:
 			}
 #else
 		sd = proxy_connect(tcreds);
+
+		// pam_cntlm
+		//
+		update_creds(tcreds, cd);
+		if (debug) {
+			printf("---> pam_cntlm: forward_request new connection\n");
+		}
+
 		if (sd < 0) {
 			tmp = gen_502_page(request->http, "Parent proxy unreachable");
 			(void) write_wrapper(cd, tmp, strlen(tmp));

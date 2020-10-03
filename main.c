@@ -74,6 +74,11 @@
 #include <pacparser.h>
 #endif
 
+// pam_cntlm patch
+//
+#include "pam_cntlm.h"
+int sharedmemory = 0;
+
 #define STACK_SIZE	sizeof(void *)*8*1024
 
 /*
@@ -938,7 +943,7 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:x:B:F:G:HL:M:N:O:P:R:S:U:X:q:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIZl:p:r:su:vw:x:B:F:G:HL:M:N:O:P:R:S:U:X:q:")) != -1) {
 		switch (i) {
 			case 'a':
 				strlcpy(cauth, optarg, MINIBUF_SIZE);
@@ -1113,6 +1118,9 @@ int main(int argc, char **argv) {
 					fprintf(stderr, "Invalid argument for option -q, using default value of %d.\n", request_logging_level);
 				}
 				break;
+			case 'Z':
+				sharedmemory = 1;
+				break;
 			case 'h':
 				help = 1;
 				break;
@@ -1205,6 +1213,7 @@ int main(int argc, char **argv) {
 		fprintf(stream, "\t-X  <sspi_handle_type>\n"
 				"\t    Use SSPI with specified handle type. Works only under Windows.\n"
 				"\t    Default is negotiate.\n");
+		fprintf(stream, "\t-Z  Use shared memory (pam_cntlm's patch).\n");
 		fprintf(stream, "\n");
 		exit(exit_code);
 	}
@@ -1775,7 +1784,12 @@ int main(int argc, char **argv) {
 				myexit(1);
 			}
 			i = setuid(nuid);
-			syslog(LOG_INFO, "Changing uid:gid to %d:%d - %s\n", nuid, ngid, strerror(errno));
+			if (!sharedmemory) {
+				syslog(LOG_INFO, "Changing uid:gid to %d:%d - %s\n", nuid, ngid, strerror(errno));
+			}
+			else {
+				syslog(LOG_INFO, "pam_cntlm: shared memory enabled. Changing uid:gid to %d:%d - %s\n", nuid, ngid, strerror(errno));
+			}
 			if (i) {
 				syslog(LOG_ERR, "Terminating\n");
 				myexit(1);
