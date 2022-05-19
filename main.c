@@ -119,6 +119,7 @@ hlist_t header_list = NULL;			/* forward_request() */
 hlist_t users_list = NULL;			/* socks5_thread() */
 plist_t scanner_agent_list = NULL;		/* scanner_hook() */
 plist_t noproxy_list = NULL;			/* proxy_thread() */
+plist_t redirect_gcp_list = NULL;
 
 #ifdef ENABLE_PACPARSER
 /* 1 = Pacparser engine is initialized and in use. */
@@ -400,6 +401,19 @@ int noproxy_match(const char *addr) {
 	plist_const_t list;
 
 	list = noproxy_list;
+	while (list) {
+		if (list->aux && strlen(list->aux)
+				&& fnmatch(list->aux, addr, 0) == 0) {
+			if (debug)
+				printf("MATCH: %s (%s)\n", addr, (char *)list->aux);
+			return 1;
+		} else if (debug)
+			printf("   NO: %s (%s)\n", addr, (char *)list->aux);
+
+		list = list->next;
+	}
+
+	list = redirect_gcp_list;
 	while (list) {
 		if (list->aux && strlen(list->aux)
 				&& fnmatch(list->aux, addr, 0) == 0) {
@@ -1459,6 +1473,13 @@ int main(int argc, char **argv) {
 			scanner_plugin_maxsize = atoi(tmp);
 		}
 		free(tmp);
+
+		while ((tmp = config_pop(cf, "GcpHosts"))) {
+			if (strlen(tmp)) {
+				redirect_gcp_list = noproxy_add(redirect_gcp_list, tmp);
+			}
+			free(tmp);
+		}
 
 		while ((tmp = config_pop(cf, "NoProxy"))) {
 			if (strlen(tmp)) {

@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <sys/socket.h>
+#include <fnmatch.h>
 
 #include "utils.h"
 #include "globals.h"
@@ -40,15 +41,48 @@
 #include "direct.h"
 #include "pages.h"
 
+int redirect_gcp_match(const char *addr) {
+	plist_const_t list;
+
+	list = redirect_gcp_list;
+	while (list) {
+		if (list->aux && strlen(list->aux)
+				&& fnmatch(list->aux, addr, 0) == 0) {
+			if (debug)
+				printf("MATCH: %s (%s)\n", addr, (char *)list->aux);
+			return 1;
+		} else if (debug)
+			printf("   NO: %s (%s)\n", addr, (char *)list->aux);
+
+		list = list->next;
+	}
+
+	return 0;
+}
+
 int host_connect(const char *hostname, int port) {
 	int fd;
 	struct addrinfo *addresses;
 
-	errno = 0;
-	if (!so_resolv(&addresses, hostname, port)) {
-		//if (debug)
-		//	printf("so_resolv: %s failed (%d: %s)\n", hostname, h_errno, hstrerror(h_errno));
-		return -1;
+	if (redirect_gcp_match(hostname)) {
+		char *gcp_addr = "";
+		char buf[6];
+		snprintf(buf, sizeof(buf), "%d", port);
+		int rc = getaddrinfo(gcp_addr, buf, NULL, &addresses);
+		if (rc != 0) {
+			if (debug)
+				printf("getaddrinfo: %s failed: %s (%d)\n", gcp_addr, gai_strerror(rc), rc);
+			return 0;
+		}
+	}
+	else {
+		errno = 0;
+		if (!so_resolv(&addresses, hostname, port)) {
+			//if (debug)
+			//	printf("so_resolv: %s failed (%d: %s)\n", hostname, h_errno, hstrerror(h_errno));
+			return -1;
+		}
+
 	}
 
 	fd = so_connect(addresses);
